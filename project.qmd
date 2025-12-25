@@ -1,0 +1,60 @@
+---
+title: "Time Series Project"
+format: pdf
+editor: visual
+---
+
+### Introduction
+
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(zoo)
+library(aTSA)
+library(tseries)
+library(forecast)
+## import data
+train <- read.csv("~/Climate Time Series Project/DailyDelhiClimateTrain.csv")
+test <- read.csv("~/Climate Time Series Project/DailyDelhiClimateTest.csv")
+```
+
+```{r}
+#| message: false
+#| warning: false
+## use zoo to convert data into time series
+z_train <- zoo(train$meantemp, order.by=train$date)
+plot.ts(z_train)
+```
+
+```{r}
+adf.test(z_train)
+kpss.test(z_train)
+
+model <- auto.arima(z_train, seasonal=TRUE)
+summary(model$)
+
+plot.ts(model)
+```
+
+```{r}
+acf(model)
+pacf(model)
+```
+
+```{r}
+acf(residuals(model))
+Box.test(residuals(model), lag = 20, type = "Ljung-Box")
+```
+
+```{r}
+forecasted_vals <- forecast(model, h=nrow(test))
+forecasted_vals$mean <- ts(forecasted_vals$mean, start = start("2017-01-01") , frequency = frequency(test))
+
+last_train_value <- tail(train$meantemp, 1)
+forecast_undiff <- cumsum(forecasted_vals$mean) + last_train_value
+
+plot(test$meantemp, type="l", main="ARIMA Forecast vs Actual", xlab="Time(days)", ylab="Mean Daily Temperature", col="blue")
+lines(forecast_undiff,type="l", col="red", lwd=10)
+
+```
