@@ -6,7 +6,12 @@ editor: visual
 
 ### Introduction
 
+This purpose of this project is to analyze the trends and patterns in mean daily temperature of the New Delhi time series data set. The data was collected from the city of Delhi from 2013 to 2017, with the first four months of 2017 separated into a test data set. The end goal is to be able to forecast future temperatures using past patterns.
+
+### Analysis
+
 ```{r}
+#| echo: false
 #| message: false
 #| warning: false
 library(tidyverse)
@@ -20,41 +25,59 @@ test <- read.csv("~/Climate Time Series Project/DailyDelhiClimateTest.csv")
 ```
 
 ```{r}
+#| echo: false
 #| message: false
 #| warning: false
 ## use zoo to convert data into time series
 z_train <- zoo(train$meantemp, order.by=train$date)
 plot.ts(z_train)
+y <- ts(z_train)
 ```
 
+The plotted data clearly indicates a yearly season with trends on a smaller time scale.
+
 ```{r}
+#| echo: false
+## numerically test if data is stationary
 adf.test(z_train)
 kpss.test(z_train)
 
-model <- auto.arima(z_train, seasonal=TRUE)
-summary(model$)
-
-plot.ts(model)
+## fit data to model using tbats
+fit_tbats <- tbats(y,seasonal.periods=c(7, 365.25))
 ```
+
+The ADF and KPSS test both indicate that the data is not stationary at a 0.05 significance level. This is due to the seasonality and trends. We use TBATS to fit an SARIMA model to include seasonality at the week and year interval. This should capture the majority of trends, making the series stationary.
 
 ```{r}
-acf(model)
-pacf(model)
+#| echo: false
+## check residuals to see if model assumptions hold
+acf(residuals(fit_tbats))
+Box.test(residuals(fit_tbats), lag = 365, type = "Ljung-Box")
 ```
+
+We check the ACF of the residuals to verify that time dependence is removed from the series. We use the Box-Ljung test to see if our observations are independently distributed, or that residual auto-correlations are jointly zero. The ACF of residuals graph shows that there are no spikes, meaning our observations are not time dependent. The Box-Ljung test gives a p-value of 0.9879, which indicates that our observations are independently distributed with a significance threshold of 0.05.
 
 ```{r}
-acf(residuals(model))
-Box.test(residuals(model), lag = 20, type = "Ljung-Box")
+## forecast values and compare to test data
+fc_tbat <- forecast(fit_tbats, h=nrow(test))
+test_ts <- ts(
+  test$meantemp,
+  start = end(fit_tbats$y) + c(0, 1),
+  frequency = frequency(fit_tbats$y)
+)
+plot(fc_tbat, main="Forecasts from TBATS model vs Test Data")
+lines(test_ts, col="red", lwd=1)
 ```
+
+The graph shows the forecasted values with a blue line and values from the test data set with a red line. The forecast seems relatively accurate but smooths away a lot of the smaller trends in the data.
 
 ```{r}
-forecasted_vals <- forecast(model, h=nrow(test))
-forecasted_vals$mean <- ts(forecasted_vals$mean, start = start("2017-01-01") , frequency = frequency(test))
-
-last_train_value <- tail(train$meantemp, 1)
-forecast_undiff <- cumsum(forecasted_vals$mean) + last_train_value
-
-plot(test$meantemp, type="l", main="ARIMA Forecast vs Actual", xlab="Time(days)", ylab="Mean Daily Temperature", col="blue")
-lines(forecast_undiff,type="l", col="red", lwd=10)
-
+## check accuracy of forecasting model
+accuracy(fc_tbat, test_ts)
 ```
+
+We can see from the accuracy test that the model's test accuracy is not great. The mean absolute error(MAE) is around one unit higher than the training set. The mean average percent error(MAPE) is about doubled, meaning accuracy is lower than training. Mean absolute scaled error(MASE) is above 1, which means it is worse than a naive model. ACF1 shows that there is now a strong correlation rather than the nearly no correlation in training. Theil's U statistic is greater than 1, which also shows that the model is worse than a naive model.
+
+### Conclusion
+
+While the model fit by TBAT maintains assumptions, it fails to consider minor trends on the scale of tens of days. Looking at the graph, we can see that the forecasted values follow the general shape and direction of the actual data but is significantly smoother. Several diagnostics also show that this model is not as good a naive model. Overall, this means that the SARIMA model could not adequately capture all the trends in the data. To capture these trends better, I could check the model afterwards with ADF and AIC/BIC to make sure the automatic functions are not overfitting. I could also compare candidate models with naive models to favor a more parsimonious options.
